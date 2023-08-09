@@ -19,6 +19,7 @@ import (
 	"github.com/funmangic/mqant/gate"
 	"github.com/funmangic/mqant/log"
 	"github.com/funmangic/mqant/module"
+	"github.com/yireyun/go-queue"
 	"strings"
 	"time"
 )

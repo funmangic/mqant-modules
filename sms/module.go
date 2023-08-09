@@ -11,6 +11,7 @@ import (
 	"github.com/funmangic/mqant/conf"
 	"github.com/funmangic/mqant/gate"
 	"github.com/funmangic/mqant/module"
+	basemodule "github.com/funmangic/mqant/module/base"
 	"github.com/gomodule/redigo/redis"
 	"io/ioutil"
 	"net/http"
