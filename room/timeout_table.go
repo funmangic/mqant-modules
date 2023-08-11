@@ -39,17 +39,21 @@ func (this *TimeOutTable) ResetTimeOut() {
 检查整个table是否已超时
 
 检查规则:
-1. 所有玩家超过指定时间未连接
-2. 所有玩家网络中断时间超过指定时间(依赖table内会定期广播消息给玩家)
+1. 所有玩家离开场景
+2. 场景中没有人超过指定时间
 */
 func (this *TimeOutTable) CheckTimeOut() {
-	for _, player := range this.subtable.GetSeats() {
-		if player != nil {
-			if this.lastCommunicationDate < player.GetLastReqResDate() {
-				this.lastCommunicationDate = player.GetLastReqResDate()
-			}
-		}
+	if len(this.subtable.GetSeats()) > 0 {
+		this.ResetTimeOut()
+		return
 	}
+	//for _, player := range this.subtable.GetSeats() {
+	//	if player != nil {
+	//		if this.lastCommunicationDate < player.GetLastReqResDate() {
+	//			this.lastCommunicationDate = player.GetLastReqResDate()
+	//		}
+	//	}
+	//}
 	if this.timeout > 0 {
 		if time.Now().Unix() > (this.lastCommunicationDate + this.timeout) {
 			this.subtable.OnTimeOut()
