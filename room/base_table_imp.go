@@ -58,7 +58,8 @@ func (this *QTable) update(arge interface{}) {
 	if this.opts.Update != nil {
 		this.opts.Update(time.Now().Sub(this.last_time_update))
 	}
-	this.ExecuteCallBackMsg(this.Trace()) //统一发送数据到客户端
+	this.ExecuteCallBackMsg(this.Trace())      //统一发送数据到客户端
+	this.ExecuteCallBackQueueMsg(this.Trace()) // queue打包发送到客户端
 	this.CheckTimeOut()
 	if this.opts.PostUpdate != nil {
 		this.opts.PostUpdate(time.Now().Sub(this.last_time_update))

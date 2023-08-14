@@ -19,6 +19,7 @@ import (
 	"github.com/funmangic/mqant/gate"
 	"github.com/funmangic/mqant/log"
 	"github.com/funmangic/mqant/module"
+	rpcpb "github.com/funmangic/mqant/rpc/pb"
 	"github.com/yireyun/go-queue"
 	"strings"
 	"time"
@@ -33,6 +34,11 @@ type CallBackMsg struct {
 	topic     *string
 	body      *[]byte
 }
+type CallBackQueueMsg struct {
+	player string
+	topic  string
+	body   []byte
+}
 type TableImp interface {
 	GetSeats() map[string]BasePlayer
 	GetApp() module.App
@@ -40,11 +46,13 @@ type TableImp interface {
 type UnifiedSendMessageTable struct {
 	queue_message *queue.EsQueue
 	tableimp      TableImp
+	batchQueue    *queue.EsQueue
 }
 
 func (this *UnifiedSendMessageTable) UnifiedSendMessageTableInit(tableimp TableImp, Capaciity uint32) {
 	this.queue_message = queue.NewQueue(Capaciity)
 	this.tableimp = tableimp
+	this.batchQueue = queue.NewQueue(Capaciity)
 }
 func (this *UnifiedSendMessageTable) FindPlayer(session gate.Session) BasePlayer {
 	for _, player := range this.tableimp.GetSeats() {
@@ -100,6 +108,19 @@ func (this *UnifiedSendMessageTable) SendCallBackMsgNR(players []string, topic s
 		players:   players,
 		topic:     &topic,
 		body:      &body,
+	})
+	if !ok {
+		return fmt.Errorf("Put Fail, quantity:%v\n", quantity)
+	} else {
+		return nil
+	}
+}
+
+func (this *UnifiedSendMessageTable) SendQueueMsgNR(userID string, topic string, body []byte) error {
+	ok, quantity := this.batchQueue.Put(&CallBackQueueMsg{
+		player: userID,
+		topic:  topic,
+		body:   body,
 	})
 	if !ok {
 		return fmt.Errorf("Put Fail, quantity:%v\n", quantity)
@@ -238,22 +259,60 @@ func (this *UnifiedSendMessageTable) SendMsg(span log.TraceSpan, msg *CallBackMs
 
 		}
 	} else {
-		for _, sessionId := range msg.players {
-			for _, role := range this.tableimp.GetSeats() {
-				if role != nil {
-					if (role.Session() != nil) && (role.Session().GetSessionID() == sessionId) {
-						if msg.needReply {
-							e := role.Session().Send(*msg.topic, *msg.body)
-							if e == "" {
-								role.OnResponse(role.Session())
-							}
-						} else {
-							_ = role.Session().SendNR(*msg.topic, *msg.body)
+		seats := this.tableimp.GetSeats()
+		for _, playerID := range msg.players {
+			role := seats[playerID]
+			if role != nil {
+				if role.Session() != nil {
+					if msg.needReply {
+						e := role.Session().Send(*msg.topic, *msg.body)
+						if e == "" {
+							role.OnResponse(role.Session())
 						}
+					} else {
+						_ = role.Session().SendNR(*msg.topic, *msg.body)
 					}
 				}
-
 			}
+		}
+	}
+}
+
+func (this *UnifiedSendMessageTable) ExecuteCallBackQueueMsg(span log.TraceSpan) {
+	ok := true
+	batchQueue := this.batchQueue
+	msg := make([]*CallBackQueueMsg, 0)
+	for ok {
+		val, _ok, _ := batchQueue.Get()
+		if _ok {
+			msg = append(msg, val.(*CallBackQueueMsg))
+		}
+		ok = _ok
+	}
+	this.SendQueueMsg(span, msg)
+}
+
+func (this *UnifiedSendMessageTable) SendQueueMsg(span log.TraceSpan, msg []*CallBackQueueMsg) {
+	userID2Msg := make(map[string]*rpcpb.CallBackQueueMsg)
+	for _, queueMsg := range msg {
+		userID := queueMsg.player
+		message := userID2Msg[userID]
+		if message == nil {
+			message = &rpcpb.CallBackQueueMsg{
+				SessionId: "",
+				Topics:    make([]string, 0),
+				Bodies:    make([][]byte, 0),
+			}
+			userID2Msg[userID] = message
+		}
+		message.Topics = append(message.Topics, queueMsg.topic)
+		message.Bodies = append(message.Bodies, queueMsg.body)
+	}
+	for userID, message := range userID2Msg {
+		seats := this.tableimp.GetSeats()
+		role := seats[userID]
+		if role != nil && role.Session() != nil {
+			_, _ = role.Session().SendQueue(message.Topics, message.Bodies)
 		}
 	}
 }
